@@ -1,0 +1,53 @@
+{
+  "bot-account": {
+    "username": "AFK_Bot",
+    "password": "",
+    "type": "offline"
+  },
+  "server": {
+    "ip": "THE_HOME_BASE.aternos.me",
+    "port": 25565,
+    "version": "1.19.3"
+  },
+  "position": {
+    "enabled": false,
+    "x": 0,
+    "y": 0,
+    "z": 0
+  },
+  "utils": {
+    "auto-auth": {
+      "enabled": true,
+      "password": "Afkbot101"
+    },
+    "anti-afk": {
+      "enabled": true,
+      "sneak": true,
+      "jump": true,
+      "rotate": true,
+      "hit": {
+        "enabled": true,
+        "delay": 4000,
+        "attack-mobs": false
+      },
+      "circle-walk": {
+        "enabled": true,
+        "radius": 2
+      }
+    },
+    "chat-messages": {
+      "enabled": true,
+      "repeat": true,
+      "repeat-delay": 300,
+      "messages": [
+        "lag",
+        "brb",
+        "still here",
+        "farming"
+      ]
+    },
+    "chat-log": true,
+    "auto-reconnect": true,
+    "auto-reconnect-delay": 10000
+  }
+}
