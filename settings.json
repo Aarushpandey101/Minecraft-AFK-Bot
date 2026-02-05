@@ -1,6 +1,6 @@
 {
   "bot-account": {
-    "username": "AFK_Bot",
+    "username": "Pookie",
     "password": "",
     "type": "offline"
   },
@@ -41,9 +41,11 @@
       "repeat-delay": 300,
       "messages": [
         "lag",
-        "brb",
-        "still here",
-        "farming"
+        "Help!!",
+        "Can someone give me food?",
+        "farming",
+        "Let's do our Best!!",
+        "How is everyone doing!"
       ]
     },
     "chat-log": true,
