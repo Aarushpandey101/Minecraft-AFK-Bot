@@ -1,6 +1,6 @@
 {
   "bot-account": {
-    "username": "AFK_Bot",
+    "username": "Pookie",
     "password": "",
     "type": "offline"
   },
@@ -20,36 +20,27 @@
       "enabled": true,
       "password": "Afkbot101"
     },
-    "anti-afk": {
+    "behavior": {
       "enabled": true,
-      "sneak": true,
-      "jump": true,
-      "rotate": true,
-      "hit": {
-        "enabled": true,
-        "delay": 4000,
-        "attack-mobs": false
-      },
-      "circle-walk": {
-        "enabled": true,
-        "radius": 2
-      }
+      "mode": "stealth",
+      "move-radius": 4
     },
     "chat-messages": {
       "enabled": true,
-      "repeat": true,
-      "repeat-delay": 300,
+      "random-delay-min": 300,
+      "random-delay-max": 900,
       "messages": [
-        "lag",
-        "Help!!",
-        "Can someone give me food?",
-        "farming",
-        "Let's do our Best!!",
-        "How is everyone doing!"
+        "lag?",
+        "brb getting water",
+        "lol",
+        "nice",
+        "anyone online?",
+        "back",
+        "oof"
       ]
     },
     "chat-log": true,
     "auto-reconnect": true,
-    "auto-reconnect-delay": 10000
+    "auto-reconnect-delay": 60000
   }
 }
