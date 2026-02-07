@@ -1,22 +1,17 @@
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
-const GoalBlock = goals.GoalBlock;
 const config = require('./settings.json');
 const loggers = require('./logging.js');
 const logger = loggers.logger;
 
-// --- RENDER KEEP-ALIVE START ---
+// --- RENDER KEEP-ALIVE ---
 const http = require('http');
 const port = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
     res.statusCode = 200;
-    res.setHeader('Content-Type', 'text/plain');
     res.end('Bot is running!');
 });
-server.listen(port, () => {
-    console.log(`Keep-alive server running on port ${port}`);
-});
-// --- RENDER KEEP-ALIVE END ---
+server.listen(port, () => console.log(`Keep-alive server running on port ${port}`));
 
 function createBot() {
     const bot = mineflayer.createBot({
@@ -30,45 +25,27 @@ function createBot() {
 
     bot.loadPlugin(pathfinder);
 
-    bot.once('inject_allowed', () => {
-        const mcData = require('minecraft-data')(bot.version);
-        const defaultMove = new Movements(bot, mcData);
-        bot.settings.colorsEnabled = false;
-        bot.pathfinder.setMovements(defaultMove);
-    });
-
     bot.once('spawn', () => {
         logger.info("Bot joined the server.");
 
-        // --- AUTHENTICATION ---
+        // --- AUTH ---
         if (config.utils['auto-auth'].enabled) {
             let password = process.env.BOT_PASSWORD || config.utils['auto-auth'].password;
-            // Wait a random time between 2s and 5s before logging in (looks more human)
-            const loginDelay = Math.floor(Math.random() * 3000) + 2000;
-            
             setTimeout(() => {
-                // Only sending login. Spamming register + login is a bot red flag.
-                // Ensure you have registered 'Pookie' manually or via console first!
                 bot.chat(`/login ${password}`);
-                logger.info(`Sent login command.`);
-            }, loginDelay);
+                logger.info(`Logged in.`);
+            }, 3000);
         }
 
-        // --- STEALTH BEHAVIOR ---
-        if (config.utils.behavior && config.utils.behavior.enabled) {
-            logger.info("Starting stealth behavior loop...");
-            startBehaviorLoop(bot);
-        }
+        // --- START BRAIN ---
+        logger.info("Starting Survival Brain...");
+        startBrainLoop(bot);
 
-        // --- CHAT SYSTEM ---
-        if (config.utils['chat-messages'].enabled) {
-            startChatLoop(bot);
-        }
-
-        // --- GO TO POSITION (OPTIONAL) ---
-        if (config.position && config.position.enabled) {
-            bot.pathfinder.setGoal(new GoalBlock(config.position.x, config.position.y, config.position.z));
-        }
+        // --- CHAT ---
+        if (config.utils['chat-messages'].enabled) startChatLoop(bot);
+        
+        // --- AUTO EAT (Check every 10 seconds) ---
+        setInterval(() => checkHunger(bot), 10000);
     });
 
     bot.on('chat', (username, message) => {
@@ -77,94 +54,134 @@ function createBot() {
         }
     });
 
-    bot.on('death', () => {
-        logger.warn(`Bot died. Waiting for respawn...`);
-    });
-
-    bot.on('kicked', (reason) => {
-        let reasonText = reason;
-        try {
-            const r = JSON.parse(reason);
-            reasonText = r.text || (r.extra && r.extra[0] ? r.extra[0].text : reason);
-        } catch (e) {
-            // use raw reason
-        }
-        logger.warn(`Bot was kicked: ${reasonText}`);
-    });
-
+    bot.on('kicked', (reason) => logger.warn(`Kicked: ${reason}`));
+    bot.on('error', (err) => logger.error(`Error: ${err.message}`));
+    
     bot.on('end', () => {
         if (config.utils['auto-reconnect']) {
-            const delay = config.utils['auto-reconnect-delay'] || 30000;
-            logger.info(`Disconnected. Reconnecting in ${delay / 1000} seconds...`);
-            setTimeout(createBot, delay);
+            setTimeout(createBot, config.utils['auto-reconnect-delay']);
         }
     });
-
-    bot.on('error', (err) => logger.error(`Error: ${err.message}`));
 }
 
-// --- HUMANIZED BEHAVIOR LOGIC ---
-
-function startBehaviorLoop(bot) {
-    // Randomly decide what to do next:
-    // 0 = look around, 1 = jump/sneak, 2 = walk slightly, 3 = swing arm, 4 = do nothing
-    
-    const nextActionDelay = Math.floor(Math.random() * 15000) + 5000; // Act every 5-20 seconds
+// --- MAIN BRAIN LOOP ---
+function startBrainLoop(bot) {
+    // Randomize reaction time (Human-like)
+    const nextActionDelay = Math.floor(Math.random() * 3000) + 1000;
 
     setTimeout(() => {
-        if (!bot || !bot.entity) return;
-
-        const action = Math.floor(Math.random() * 10); 
-
-        if (action < 3) { 
-            // 30% chance: Look at a random nearby block
-            bot.look(bot.entity.yaw + (Math.random() - 0.5), bot.entity.pitch + (Math.random() - 0.5) * 0.5);
-        } 
-        else if (action === 3) {
-            // 10% chance: Swing arm
-            bot.swingArm('right');
+        if (!bot || !bot.entity) {
+            startBrainLoop(bot); 
+            return;
         }
-        else if (action === 4) {
-             // 10% chance: Quick sneak
-             bot.setControlState('sneak', true);
-             setTimeout(() => bot.setControlState('sneak', false), 500);
-        }
-        else if (action === 5) {
-            // 10% chance: Small Random Walk (Stealth Movement)
-            const r = config.utils.behavior['move-radius'] || 3;
-            const pos = bot.entity.position;
-            // Pick a random spot nearby
-            const tx = pos.x + (Math.random() * r * 2) - r;
-            const tz = pos.z + (Math.random() * r * 2) - r;
-            
-            // Only move if we aren't already moving
-            if (!bot.pathfinder.isMoving()) {
-                bot.pathfinder.setGoal(new goals.GoalXZ(tx, tz));
+
+        // 1. COMBAT LOGIC
+        if (config.utils.combat.enabled) {
+            const enemy = bot.nearestEntity(e => 
+                (e.type === 'hostile' || e.type === 'mob') && 
+                e.position.distanceTo(bot.entity.position) < config.utils.combat['kill-radius']
+            );
+
+            if (enemy) {
+                // A. EQUIP WEAPON (If we have one)
+                const weapons = config.utils.combat['preferred-weapons'];
+                const weapon = bot.inventory.items().find(item => weapons.includes(item.name));
+                if (weapon) bot.equip(weapon, 'hand');
+
+                // B. EQUIP SHIELD (If we have one in inventory but not in hand)
+                const shieldInInv = bot.inventory.items().find(item => item.name === 'shield');
+                const shieldInHand = bot.entity.equipment[1] && bot.entity.equipment[1].name === 'shield';
+                
+                if (shieldInInv && !shieldInHand) {
+                    bot.equip(shieldInInv, 'off-hand');
+                }
+
+                // C. ATTACK LOGIC
+                bot.lookAt(enemy.position.offset(0, enemy.height, 0));
+                
+                // Only try to block if we ACTUALLY have a shield equipped right now
+                if (shieldInHand && enemy.position.distanceTo(bot.entity.position) < 2.5) {
+                    bot.activateItem(true); // Raise Shield
+                } else {
+                    bot.deactivateItem();   // Lower Shield (or do nothing if no shield)
+                    bot.attack(enemy);      // Attack
+                }
+
+                // If fighting, check again very quickly (0.4s)
+                setTimeout(() => startBrainLoop(bot), 400); 
+                return;
+            } else {
+                 // No enemy nearby? Lower shield just in case.
+                 bot.deactivateItem();
             }
         }
-        // 40% chance: Do nothing (Idling is human!)
 
-        // Restart loop
-        startBehaviorLoop(bot);
+        // 2. SLEEPING LOGIC
+        if (config.utils['auto-sleep'].enabled && (bot.time.isNight || bot.isRaining)) {
+            const bed = bot.findBlock({ matching: block => bot.isABed(block), maxDistance: 20 });
+            if (bed && !bot.isSleeping) {
+                bot.sleep(bed).catch(() => {});
+                setTimeout(() => startBrainLoop(bot), 10000);
+                return;
+            }
+        }
+
+        // 3. STEALTH IDLE (Only happens if safe)
+        doStealthAction(bot);
+        startBrainLoop(bot);
+
     }, nextActionDelay);
+}
+
+// --- EATING LOGIC ---
+async function checkHunger(bot) {
+    if (bot.food < 16 || bot.health < 15) {
+        const food = bot.inventory.items().find(item => item.name.includes('cooked') || item.name.includes('bread') || item.name.includes('steak'));
+        if (food) {
+            logger.info("Eating food...");
+            try {
+                // Determine which hand to use (avoid swapping weapon if possible)
+                await bot.equip(food, 'hand');
+                await bot.consume();
+            } catch(e) {
+                // Ignore errors (sometimes happens if item runs out mid-eat)
+            }
+        }
+    }
+}
+
+function doStealthAction(bot) {
+    if (!config.utils.behavior.enabled) return;
+    const action = Math.floor(Math.random() * 10); 
+    
+    // Look around
+    if (action < 3) { 
+        bot.look(bot.entity.yaw + (Math.random() - 0.5), bot.entity.pitch + (Math.random() - 0.5) * 0.5);
+    } 
+    // Small step (Wander inside fence)
+    else if (action === 5) {
+        const r = config.utils.behavior['move-radius'] || 2;
+        const pos = bot.entity.position;
+        const tx = pos.x + (Math.random() * r * 2) - r;
+        const tz = pos.z + (Math.random() * r * 2) - r;
+        
+        // Raycast check: Don't walk if there is a block (like a fence) immediately in the way
+        const block = bot.blockAt(bot.entity.position.offset(0, 0, 0));
+        if (block && block.name.includes('fence')) return;
+
+        if (!bot.pathfinder.isMoving()) {
+            bot.pathfinder.setGoal(new goals.GoalXZ(tx, tz));
+        }
+    }
 }
 
 function startChatLoop(bot) {
     const min = config.utils['chat-messages']['random-delay-min'] || 300;
     const max = config.utils['chat-messages']['random-delay-max'] || 900;
-    
-    // Calculate random delay in seconds, convert to ms
     const delay = (Math.floor(Math.random() * (max - min + 1)) + min) * 1000;
-
     setTimeout(() => {
-        if (!bot || !bot.entity) return;
-        
         const msgs = config.utils['chat-messages'].messages;
-        const msg = msgs[Math.floor(Math.random() * msgs.length)];
-        
-        bot.chat(msg);
-        
-        // Restart loop
+        bot.chat(msgs[Math.floor(Math.random() * msgs.length)]);
         startChatLoop(bot);
     }, delay);
 }
