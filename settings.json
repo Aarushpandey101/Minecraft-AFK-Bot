@@ -23,7 +23,16 @@
     "behavior": {
       "enabled": true,
       "mode": "stealth",
-      "move-radius": 4
+      "move-radius": 2
+    },
+    "auto-sleep": {
+      "enabled": true,
+      "bed-search-radius": 20
+    },
+    "combat": {
+      "enabled": true,
+      "kill-radius": 3,
+      "preferred-weapons": ["netherite_sword", "diamond_sword", "iron_sword", "stone_sword", "golden_sword", "wooden_sword", "netherite_axe", "diamond_axe", "iron_axe"]
     },
     "chat-messages": {
       "enabled": true,
@@ -36,7 +45,8 @@
         "nice",
         "anyone online?",
         "back",
-        "oof"
+        "oof",
+        "sleeping..."
       ]
     },
     "chat-log": true,
