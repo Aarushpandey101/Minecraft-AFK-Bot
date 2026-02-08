@@ -7,7 +7,8 @@
   "server": {
     "ip": "THE_HOME_BASE.aternos.me",
     "port": 25565,
-    "version": "1.19.3"
+    "version": "1.19.3",
+    "check-timeout-interval": 60000
   },
   "position": {
     "enabled": false,
@@ -23,7 +24,18 @@
     "behavior": {
       "enabled": true,
       "mode": "stealth",
-      "move-radius": 2
+      "move-radius": 2,
+      "confinement": {
+        "enabled": false,
+        "x": 0,
+        "y": 64,
+        "z": 0,
+        "radius": 2
+      },
+      "humanizer": {
+        "interval-min": 18,
+        "interval-max": 45
+      }
     },
     "auto-sleep": {
       "enabled": true,
@@ -32,7 +44,18 @@
     "combat": {
       "enabled": true,
       "kill-radius": 3,
-      "preferred-weapons": ["netherite_sword", "diamond_sword", "iron_sword", "stone_sword", "golden_sword", "wooden_sword", "netherite_axe", "diamond_axe", "iron_axe"]
+      "preferred-weapons": [
+        "netherite_sword",
+        "diamond_sword",
+        "iron_sword",
+        "stone_sword",
+        "golden_sword",
+        "wooden_sword",
+        "netherite_axe",
+        "diamond_axe",
+        "iron_axe"
+      ],
+      "retreat-health": 10
     },
     "chat-messages": {
       "enabled": true,
@@ -51,6 +74,8 @@
     },
     "chat-log": true,
     "auto-reconnect": true,
-    "auto-reconnect-delay": 60000
+    "auto-reconnect-delay": 60000,
+    "auto-reconnect-jitter": 15000,
+    "auto-reconnect-max-backoff": 180000
   }
 }
