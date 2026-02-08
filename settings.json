@@ -54,8 +54,7 @@
         "netherite_axe",
         "diamond_axe",
         "iron_axe"
-      ],
-      "retreat-health": 10
+      ]
     },
     "chat-messages": {
       "enabled": true,
@@ -75,7 +74,6 @@
     "chat-log": true,
     "auto-reconnect": true,
     "auto-reconnect-delay": 60000,
-    "auto-reconnect-jitter": 15000,
-    "auto-reconnect-max-backoff": 180000
+    "auto-reconnect-jitter": 15000
   }
 }
