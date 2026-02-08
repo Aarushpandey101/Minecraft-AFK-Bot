@@ -1,5 +1,6 @@
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
+const { Vec3 } = require('vec3');
 const config = require('./settings.json');
 const loggers = require('./logging.js');
 const logger = loggers.logger;
@@ -21,12 +22,22 @@ function createBot() {
         host: config.server.ip,
         port: config.server.port,
         version: config.server.version,
+        keepAlive: true,
+        checkTimeoutInterval: config.server['check-timeout-interval'] || 60000,
     });
 
     bot.loadPlugin(pathfinder);
 
     bot.once('spawn', () => {
         logger.info("Bot joined the server.");
+
+        // Safer movement profile (prevents breaking blocks/fences while pathing)
+        const movement = new Movements(bot);
+        movement.canDig = false;
+        movement.allowParkour = false;
+        movement.allowSprinting = false;
+        movement.canOpenDoors = false;
+        bot.pathfinder.setMovements(movement);
 
         // --- AUTH ---
         if (config.utils['auto-auth'].enabled) {
@@ -40,6 +51,9 @@ function createBot() {
         // --- START BRAIN ---
         logger.info("Starting Survival Brain...");
         startBrainLoop(bot);
+
+        // --- HUMAN ACTIVITY LOOP ---
+        if (config.utils.behavior.enabled) startHumanActivityLoop(bot);
 
         // --- CHAT ---
         if (config.utils['chat-messages'].enabled) startChatLoop(bot);
@@ -59,9 +73,65 @@ function createBot() {
     
     bot.on('end', () => {
         if (config.utils['auto-reconnect']) {
-            setTimeout(createBot, config.utils['auto-reconnect-delay']);
+            const baseDelay = config.utils['auto-reconnect-delay'];
+            const jitter = config.utils['auto-reconnect-jitter'] || 0;
+            const randomizedDelay = baseDelay + Math.floor(Math.random() * (jitter + 1));
+            logger.info(`Reconnecting in ${Math.round(randomizedDelay / 1000)}s...`);
+            setTimeout(createBot, randomizedDelay);
         }
     });
+}
+
+
+function randomBetween(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function pulseControl(bot, control, holdMin = 100, holdMax = 350) {
+    const holdMs = randomBetween(holdMin, holdMax);
+    bot.setControlState(control, true);
+    setTimeout(() => bot.setControlState(control, false), holdMs);
+}
+
+function startHumanActivityLoop(bot) {
+    const humanCfg = config.utils.behavior['humanizer'] || {};
+    const minS = humanCfg['interval-min'] || 18;
+    const maxS = humanCfg['interval-max'] || 45;
+    const delay = randomBetween(minS, maxS) * 1000;
+
+    setTimeout(() => {
+        if (!bot || !bot.entity) {
+            startHumanActivityLoop(bot);
+            return;
+        }
+
+        // Skip if bot is pathing/fighting/sleeping
+        const busy = bot.pathfinder.isMoving() || bot.isSleeping;
+        if (!busy) {
+            const roll = Math.random();
+
+            // Most common: just subtle view changes
+            if (roll < 0.5) {
+                const yawOffset = (Math.random() - 0.5) * 0.7;
+                const pitchOffset = (Math.random() - 0.5) * 0.25;
+                bot.look(bot.entity.yaw + yawOffset, bot.entity.pitch + pitchOffset, true);
+            }
+            // Occasional short crouch pulse
+            else if (roll < 0.72) {
+                pulseControl(bot, 'sneak', 300, 1300);
+            }
+            // Occasional jump (anti-afk friendly, still natural)
+            else if (roll < 0.88) {
+                pulseControl(bot, 'jump', 120, 260);
+            }
+            // Rarely swing hand like a player adjusting
+            else {
+                bot.swingArm();
+            }
+        }
+
+        startHumanActivityLoop(bot);
+    }, delay);
 }
 
 // --- MAIN BRAIN LOOP ---
@@ -118,7 +188,8 @@ function startBrainLoop(bot) {
 
         // 2. SLEEPING LOGIC
         if (config.utils['auto-sleep'].enabled && (bot.time.isNight || bot.isRaining)) {
-            const bed = bot.findBlock({ matching: block => bot.isABed(block), maxDistance: 20 });
+            const bedSearchRadius = config.utils['auto-sleep']['bed-search-radius'] || 20;
+            const bed = bot.findBlock({ matching: block => bot.isABed(block), maxDistance: bedSearchRadius });
             if (bed && !bot.isSleeping) {
                 bot.sleep(bed).catch(() => {});
                 setTimeout(() => startBrainLoop(bot), 10000);
@@ -152,6 +223,17 @@ async function checkHunger(bot) {
 
 function doStealthAction(bot) {
     if (!config.utils.behavior.enabled) return;
+
+    const confinement = config.utils.behavior.confinement;
+    if (confinement?.enabled && bot.entity) {
+        const center = new Vec3(confinement.x, confinement.y, confinement.z);
+        const radius = confinement.radius || 1.5;
+        if (bot.entity.position.distanceTo(center) > radius) {
+            bot.pathfinder.setGoal(new goals.GoalNear(center.x, center.y, center.z, Math.max(radius - 0.25, 0.5)));
+            return;
+        }
+    }
+
     const action = Math.floor(Math.random() * 10); 
     
     // Look around
@@ -164,10 +246,6 @@ function doStealthAction(bot) {
         const pos = bot.entity.position;
         const tx = pos.x + (Math.random() * r * 2) - r;
         const tz = pos.z + (Math.random() * r * 2) - r;
-        
-        // Raycast check: Don't walk if there is a block (like a fence) immediately in the way
-        const block = bot.blockAt(bot.entity.position.offset(0, 0, 0));
-        if (block && block.name.includes('fence')) return;
 
         if (!bot.pathfinder.isMoving()) {
             bot.pathfinder.setGoal(new goals.GoalXZ(tx, tz));

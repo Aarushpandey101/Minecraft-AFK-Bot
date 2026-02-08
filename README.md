@@ -25,6 +25,15 @@
  1. Configure bot in `settings.json` file. [Bot configuration is explained in our wiki](https://urfate.gitbook.io/afk-bot/bot-configuration)
  2. Start bot with `node .` command.
 
+
+## Stability tips (disconnects / escaping)
+
+- Increase `server.check-timeout-interval` in `settings.json` if your host has lag spikes.
+- Add reconnect jitter with `utils.auto-reconnect-jitter` to avoid fixed reconnect patterns.
+- Use `utils.behavior.confinement` to keep the bot near a fixed center point so it does not wander out of fenced areas.
+- Keep `move-radius` small (1-2) when the bot is inside a tiny AFK box with a bed.
+- Tune `utils.behavior.humanizer.interval-min/max` for irregular micro-actions (look, sneak, jump) to reduce AFK kicks.
+
 ## Features
 
  - Anti-AFK Kick Module
