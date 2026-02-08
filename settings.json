@@ -27,10 +27,10 @@
       "move-radius": 2,
       "confinement": {
         "enabled": false,
-        "x": 0,
-        "y": 64,
-        "z": 0,
-        "radius": 2
+        "x": -102,
+        "y": 63,
+        "z": 17,
+        "radius": 3
       },
       "humanizer": {
         "interval-min": 20,
@@ -39,7 +39,7 @@
     },
     "auto-sleep": {
       "enabled": true,
-      "bed-search-radius": 20,
+      "bed-search-radius": 30,
       "approach-distance": 2
     },
     "combat": {
