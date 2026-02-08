@@ -39,7 +39,8 @@
     },
     "auto-sleep": {
       "enabled": true,
-      "bed-search-radius": 20
+      "bed-search-radius": 20,
+      "approach-distance": 2
     },
     "combat": {
       "enabled": true,
@@ -69,7 +70,8 @@
         "back",
         "oof",
         "sleeping..."
-      ]
+      ],
+      "only-when-players-online": false
     },
     "chat-log": true,
     "auto-reconnect": true,
