@@ -28,6 +28,8 @@ function createBot() {
 
     bot.loadPlugin(pathfinder);
 
+    let sleepTaskRunning = false;
+
     bot.once('spawn', () => {
         logger.info("Bot joined the server.");
 
@@ -52,6 +54,11 @@ function createBot() {
         logger.info("Starting Survival Brain...");
         startBrainLoop(bot);
 
+        // --- NIGHT SLEEP ENFORCER (runs frequently so we don't miss sleep windows) ---
+        setInterval(() => {
+            attemptAutoSleep(bot, () => sleepTaskRunning = true, () => sleepTaskRunning = false, () => sleepTaskRunning);
+        }, 2500);
+
         // --- HUMAN ACTIVITY LOOP ---
         if (config.utils.behavior.enabled) startHumanActivityLoop(bot);
 
@@ -60,6 +67,17 @@ function createBot() {
         
         // --- AUTO EAT (Check every 10 seconds) ---
         setInterval(() => checkHunger(bot), 10000);
+    });
+
+    bot.on('time', () => {
+        // Trigger immediate sleep attempt right when night starts.
+        if (bot.time.isNight) {
+            attemptAutoSleep(bot, () => sleepTaskRunning = true, () => sleepTaskRunning = false, () => sleepTaskRunning);
+        }
+    });
+
+    bot.on('wake', () => {
+        logger.info('Woke up.');
     });
 
     bot.on('chat', (username, message) => {
@@ -80,6 +98,42 @@ function createBot() {
             setTimeout(createBot, randomizedDelay);
         }
     });
+}
+
+async function attemptAutoSleep(bot, setBusy, clearBusy, isBusy) {
+    if (!config.utils['auto-sleep']?.enabled) return;
+    if (!bot?.entity || bot.isSleeping || !bot.time?.isNight) return;
+    if (isBusy()) return;
+
+    setBusy();
+
+    try {
+        const bedSearchRadius = config.utils['auto-sleep']['bed-search-radius'] || 20;
+        const approachDistance = config.utils['auto-sleep']['approach-distance'] || 2;
+        const bed = bot.findBlock({ matching: block => bot.isABed(block), maxDistance: bedSearchRadius });
+
+        if (!bed) {
+            logger.info('Night detected but no reachable bed found nearby.');
+            return;
+        }
+
+        // Move close to bed first to reduce sleep failures.
+        const nearBed = new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, approachDistance);
+        if (!bot.pathfinder.isMoving()) {
+            bot.pathfinder.setGoal(nearBed);
+        }
+
+        const tooFar = bot.entity.position.distanceTo(bed.position) > approachDistance + 0.5;
+        if (tooFar) return;
+
+        await bot.sleep(bed);
+        logger.info('Sleeping in bed for the night.');
+    } catch (err) {
+        // Common reasons: bed occupied, not close enough yet, monsters nearby.
+        logger.debug(`Sleep attempt failed: ${err.message}`);
+    } finally {
+        clearBusy();
+    }
 }
 
 
@@ -186,15 +240,10 @@ function startBrainLoop(bot) {
             }
         }
 
-        // 2. SLEEPING LOGIC
-        if (config.utils['auto-sleep'].enabled && (bot.time.isNight || bot.isRaining)) {
-            const bedSearchRadius = config.utils['auto-sleep']['bed-search-radius'] || 20;
-            const bed = bot.findBlock({ matching: block => bot.isABed(block), maxDistance: bedSearchRadius });
-            if (bed && !bot.isSleeping) {
-                bot.sleep(bed).catch(() => {});
-                setTimeout(() => startBrainLoop(bot), 10000);
-                return;
-            }
+        // 2. SLEEPING LOGIC (handled by dedicated sleep enforcer loop)
+        if (bot.isSleeping) {
+            setTimeout(() => startBrainLoop(bot), 5000);
+            return;
         }
 
         // 3. STEALTH IDLE (Only happens if safe)
