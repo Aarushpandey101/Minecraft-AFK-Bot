@@ -29,6 +29,8 @@ function createBot() {
     bot.loadPlugin(pathfinder);
 
     let sleepTaskRunning = false;
+    let sleepInterval = null;
+    let hungerInterval = null;
 
     bot.once('spawn', () => {
         logger.info("Bot joined the server.");
@@ -55,9 +57,10 @@ function createBot() {
         startBrainLoop(bot);
 
         // --- NIGHT SLEEP ENFORCER (runs frequently so we don't miss sleep windows) ---
-        setInterval(() => {
+        const sleepRetryMs = config.utils['auto-sleep']['retry-interval-ms'] || 2500;
+        sleepInterval = setInterval(() => {
             attemptAutoSleep(bot, () => sleepTaskRunning = true, () => sleepTaskRunning = false, () => sleepTaskRunning);
-        }, 2500);
+        }, sleepRetryMs);
 
         // --- HUMAN ACTIVITY LOOP ---
         if (config.utils.behavior.enabled) startHumanActivityLoop(bot);
@@ -66,7 +69,7 @@ function createBot() {
         if (config.utils['chat-messages'].enabled) startChatLoop(bot);
         
         // --- AUTO EAT (Check every 10 seconds) ---
-        setInterval(() => checkHunger(bot), 10000);
+        hungerInterval = setInterval(() => checkHunger(bot), 10000);
     });
 
     bot.on('time', () => {
@@ -74,6 +77,10 @@ function createBot() {
         if (bot.time.isNight) {
             attemptAutoSleep(bot, () => sleepTaskRunning = true, () => sleepTaskRunning = false, () => sleepTaskRunning);
         }
+    });
+
+    bot.on('sleep', () => {
+        logger.info('Bot is now sleeping.');
     });
 
     bot.on('wake', () => {
@@ -90,6 +97,9 @@ function createBot() {
     bot.on('error', (err) => logger.error(`Error: ${err.message}`));
     
     bot.on('end', () => {
+        if (sleepInterval) clearInterval(sleepInterval);
+        if (hungerInterval) clearInterval(hungerInterval);
+
         if (config.utils['auto-reconnect']) {
             const baseDelay = config.utils['auto-reconnect-delay'];
             const jitter = config.utils['auto-reconnect-jitter'] || 0;
@@ -99,6 +109,8 @@ function createBot() {
         }
     });
 }
+
+let lastSleepNoBedLogAt = 0;
 
 async function attemptAutoSleep(bot, setBusy, clearBusy, isBusy) {
     if (!config.utils['auto-sleep']?.enabled) return;
@@ -110,10 +122,15 @@ async function attemptAutoSleep(bot, setBusy, clearBusy, isBusy) {
     try {
         const bedSearchRadius = config.utils['auto-sleep']['bed-search-radius'] || 20;
         const approachDistance = config.utils['auto-sleep']['approach-distance'] || 2;
+        const noBedLogCooldownMs = config.utils['auto-sleep']['no-bed-log-cooldown-ms'] || 30000;
         const bed = bot.findBlock({ matching: block => bot.isABed(block), maxDistance: bedSearchRadius });
 
         if (!bed) {
-            logger.info('Night detected but no reachable bed found nearby.');
+            const now = Date.now();
+            if (now - lastSleepNoBedLogAt >= noBedLogCooldownMs) {
+                logger.info('Night detected but no reachable bed found nearby.');
+                lastSleepNoBedLogAt = now;
+            }
             return;
         }
 
@@ -126,11 +143,12 @@ async function attemptAutoSleep(bot, setBusy, clearBusy, isBusy) {
         const tooFar = bot.entity.position.distanceTo(bed.position) > approachDistance + 0.5;
         if (tooFar) return;
 
+        bot.deactivateItem();
         await bot.sleep(bed);
         logger.info('Sleeping in bed for the night.');
     } catch (err) {
         // Common reasons: bed occupied, not close enough yet, monsters nearby.
-        logger.debug(`Sleep attempt failed: ${err.message}`);
+        logger.info(`Sleep attempt failed: ${err.message}`);
     } finally {
         clearBusy();
     }
