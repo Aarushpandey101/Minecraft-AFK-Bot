@@ -40,7 +40,9 @@
     "auto-sleep": {
       "enabled": true,
       "bed-search-radius": 30,
-      "approach-distance": 2
+      "approach-distance": 2,
+      "retry-interval-ms": 2500,
+      "no-bed-log-cooldown-ms": 30000
     },
     "combat": {
       "enabled": false,

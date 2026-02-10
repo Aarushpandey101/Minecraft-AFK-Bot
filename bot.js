@@ -28,6 +28,10 @@ function createBot() {
 
     bot.loadPlugin(pathfinder);
 
+    let sleepTaskRunning = false;
+    let sleepInterval = null;
+    let hungerInterval = null;
+
     bot.once('spawn', () => {
         logger.info("Bot joined the server.");
 
@@ -52,6 +56,12 @@ function createBot() {
         logger.info("Starting Survival Brain...");
         startBrainLoop(bot);
 
+        // --- NIGHT SLEEP ENFORCER (runs frequently so we don't miss sleep windows) ---
+        const sleepRetryMs = config.utils['auto-sleep']['retry-interval-ms'] || 2500;
+        sleepInterval = setInterval(() => {
+            attemptAutoSleep(bot, () => sleepTaskRunning = true, () => sleepTaskRunning = false, () => sleepTaskRunning);
+        }, sleepRetryMs);
+
         // --- HUMAN ACTIVITY LOOP ---
         if (config.utils.behavior.enabled) startHumanActivityLoop(bot);
 
@@ -59,7 +69,22 @@ function createBot() {
         if (config.utils['chat-messages'].enabled) startChatLoop(bot);
         
         // --- AUTO EAT (Check every 10 seconds) ---
-        setInterval(() => checkHunger(bot), 10000);
+        hungerInterval = setInterval(() => checkHunger(bot), 10000);
+    });
+
+    bot.on('time', () => {
+        // Trigger immediate sleep attempt right when night starts.
+        if (bot.time.isNight) {
+            attemptAutoSleep(bot, () => sleepTaskRunning = true, () => sleepTaskRunning = false, () => sleepTaskRunning);
+        }
+    });
+
+    bot.on('sleep', () => {
+        logger.info('Bot is now sleeping.');
+    });
+
+    bot.on('wake', () => {
+        logger.info('Woke up.');
     });
 
     bot.on('chat', (username, message) => {
@@ -72,6 +97,9 @@ function createBot() {
     bot.on('error', (err) => logger.error(`Error: ${err.message}`));
     
     bot.on('end', () => {
+        if (sleepInterval) clearInterval(sleepInterval);
+        if (hungerInterval) clearInterval(hungerInterval);
+
         if (config.utils['auto-reconnect']) {
             const baseDelay = config.utils['auto-reconnect-delay'];
             const jitter = config.utils['auto-reconnect-jitter'] || 0;
@@ -80,6 +108,50 @@ function createBot() {
             setTimeout(createBot, randomizedDelay);
         }
     });
+}
+
+let lastSleepNoBedLogAt = 0;
+
+async function attemptAutoSleep(bot, setBusy, clearBusy, isBusy) {
+    if (!config.utils['auto-sleep']?.enabled) return;
+    if (!bot?.entity || bot.isSleeping || !bot.time?.isNight) return;
+    if (isBusy()) return;
+
+    setBusy();
+
+    try {
+        const bedSearchRadius = config.utils['auto-sleep']['bed-search-radius'] || 20;
+        const approachDistance = config.utils['auto-sleep']['approach-distance'] || 2;
+        const noBedLogCooldownMs = config.utils['auto-sleep']['no-bed-log-cooldown-ms'] || 30000;
+        const bed = bot.findBlock({ matching: block => bot.isABed(block), maxDistance: bedSearchRadius });
+
+        if (!bed) {
+            const now = Date.now();
+            if (now - lastSleepNoBedLogAt >= noBedLogCooldownMs) {
+                logger.info('Night detected but no reachable bed found nearby.');
+                lastSleepNoBedLogAt = now;
+            }
+            return;
+        }
+
+        // Move close to bed first to reduce sleep failures.
+        const nearBed = new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, approachDistance);
+        if (!bot.pathfinder.isMoving()) {
+            bot.pathfinder.setGoal(nearBed);
+        }
+
+        const tooFar = bot.entity.position.distanceTo(bed.position) > approachDistance + 0.5;
+        if (tooFar) return;
+
+        bot.deactivateItem();
+        await bot.sleep(bed);
+        logger.info('Sleeping in bed for the night.');
+    } catch (err) {
+        // Common reasons: bed occupied, not close enough yet, monsters nearby.
+        logger.info(`Sleep attempt failed: ${err.message}`);
+    } finally {
+        clearBusy();
+    }
 }
 
 
@@ -186,15 +258,10 @@ function startBrainLoop(bot) {
             }
         }
 
-        // 2. SLEEPING LOGIC
-        if (config.utils['auto-sleep'].enabled && (bot.time.isNight || bot.isRaining)) {
-            const bedSearchRadius = config.utils['auto-sleep']['bed-search-radius'] || 20;
-            const bed = bot.findBlock({ matching: block => bot.isABed(block), maxDistance: bedSearchRadius });
-            if (bed && !bot.isSleeping) {
-                bot.sleep(bed).catch(() => {});
-                setTimeout(() => startBrainLoop(bot), 10000);
-                return;
-            }
+        // 2. SLEEPING LOGIC (handled by dedicated sleep enforcer loop)
+        if (bot.isSleeping) {
+            setTimeout(() => startBrainLoop(bot), 5000);
+            return;
         }
 
         // 3. STEALTH IDLE (Only happens if safe)

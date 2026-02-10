@@ -34,6 +34,14 @@
 - Keep `move-radius` small (1-2) when the bot is inside a tiny AFK box with a bed.
 - Tune `utils.behavior.humanizer.interval-min/max` for irregular micro-actions (look, sneak, jump) to reduce AFK kicks.
 
+
+## Sleep reliability tips
+
+- Keep a bed within `utils.auto-sleep.bed-search-radius` blocks of the bot.
+- Set `utils.auto-sleep.approach-distance` to `2` (or `1`) so it walks close enough before sleeping.
+- `utils.auto-sleep.retry-interval-ms` controls how often the bot retries sleeping at night.
+- `utils.auto-sleep.no-bed-log-cooldown-ms` prevents log spam if no bed is found.
+
 ## Features
 
  - Anti-AFK Kick Module
