@@ -5,8 +5,8 @@
     "type": "offline"
   },
   "server": {
-    "ip": "THE_HOME_BASE.aternos.me",
-    "port": 25565,
+    "ip": "SafeSpace12.aternos.me",
+    "port": 46743,
     "version": "1.19.3",
     "check-timeout-interval": 60000
   },
