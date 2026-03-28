@@ -42,6 +42,12 @@
 - `utils.auto-sleep.retry-interval-ms` controls how often the bot retries sleeping at night.
 - `utils.auto-sleep.no-bed-log-cooldown-ms` prevents log spam if no bed is found.
 
+
+## Web status page
+
+- Open `http://localhost:3000/status` (or your deployed `PORT`) to view a live dashboard.
+- JSON API is available at `/api/status` with connection state, ping, health/food, position, reconnect counters, and timestamps.
+
 ## Features
 
  - Anti-AFK Kick Module
