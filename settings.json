@@ -1,6 +1,6 @@
 {
   "bot-account": {
-    "username": "Pookiee",
+    "username": "Pookie",
     "password": "",
     "type": "offline"
   },
@@ -8,7 +8,7 @@
     "ip": "Homeground-axHO.aternos.me",
     "port": 12599,
     "version": "1.19.3",
-    "check-timeout-interval": 60000
+    "check-timeout-interval": 180000
   },
   "position": {
     "enabled": false,
@@ -23,9 +23,9 @@
       "password": "Afkbot101"
     },
     "behavior": {
-      "enabled": true,
+      "enabled": false,
       "mode": "stealth",
-      "move-radius": 3,
+      "move-radius": 1,
       "confinement": {
         "enabled": false,
         "x": -102,
@@ -73,7 +73,7 @@
       ]
     },
     "chat-messages": {
-      "enabled": true,
+      "enabled": false,
       "random-delay-min": 300,
       "random-delay-max": 900,
       "messages": [
