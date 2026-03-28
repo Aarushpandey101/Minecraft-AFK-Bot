@@ -33,6 +33,7 @@
 - Use `utils.behavior.confinement` to keep the bot near a fixed center point so it does not wander out of fenced areas.
 - Keep `move-radius` small (1-2) when the bot is inside a tiny AFK box with a bed.
 - Tune `utils.behavior.humanizer.interval-min/max` for irregular micro-actions (look, sneak, jump) to reduce AFK kicks.
+- Use `utils.behavior.anti-idle-heartbeat` to schedule guaranteed movement/look/swing pulses every few seconds so the bot does not stay still for long periods.
 
 
 ## Sleep reliability tips

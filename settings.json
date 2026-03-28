@@ -24,7 +24,7 @@
     "behavior": {
       "enabled": true,
       "mode": "stealth",
-      "move-radius": 2,
+      "move-radius": 3,
       "confinement": {
         "enabled": false,
         "x": -102,
@@ -33,8 +33,20 @@
         "radius": 3
       },
       "humanizer": {
-        "interval-min": 20,
-        "interval-max": 50
+        "interval-min": 10,
+        "interval-max": 20
+      },
+      "anti-idle-heartbeat": {
+        "enabled": true,
+        "interval-min": 8,
+        "interval-max": 14,
+        "actions": [
+          "look",
+          "jump",
+          "sneak",
+          "swing",
+          "step"
+        ]
       }
     },
     "auto-sleep": {

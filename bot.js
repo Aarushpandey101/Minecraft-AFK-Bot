@@ -180,6 +180,13 @@ function createBot() {
     let sleepTaskRunning = false;
     let sleepInterval = null;
     let hungerInterval = null;
+    let antiIdleController = null;
+
+    bot.on('login', () => {
+        botStatus.connected = true;
+        botStatus.state = 'connected';
+        botStatus.lastConnectAt = isoNow();
+    });
 
     bot.once('spawn', () => {
         botStatus.connected = true;
@@ -220,6 +227,9 @@ function createBot() {
 
         // --- HUMAN ACTIVITY LOOP ---
         if (config.utils.behavior.enabled) startHumanActivityLoop(bot);
+
+        // --- HEARTBEAT ACTIVITY LOOP ---
+        if (config.utils.behavior.enabled) antiIdleController = startAntiIdleHeartbeatLoop(bot);
 
         // --- CHAT ---
         if (config.utils['chat-messages'].enabled) startChatLoop(bot);
@@ -271,6 +281,7 @@ function createBot() {
         if (activeBot === bot) activeBot = null;
         if (sleepInterval) clearInterval(sleepInterval);
         if (hungerInterval) clearInterval(hungerInterval);
+        if (antiIdleController) antiIdleController.stop();
 
         if (config.utils['auto-reconnect']) {
             botStatus.reconnectCount += 1;
@@ -336,6 +347,76 @@ function pulseControl(bot, control, holdMin = 100, holdMax = 350) {
     const holdMs = randomBetween(holdMin, holdMax);
     bot.setControlState(control, true);
     setTimeout(() => bot.setControlState(control, false), holdMs);
+}
+
+function pickRandom(arr, fallback) {
+    if (!Array.isArray(arr) || arr.length === 0) return fallback;
+    return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function doAntiIdlePulse(bot) {
+    if (!bot?.entity || bot.isSleeping || bot.pathfinder.isMoving()) return;
+
+    const cfg = config.utils.behavior['anti-idle-heartbeat'] || {};
+    const action = pickRandom(cfg.actions, 'look');
+
+    if (action === 'jump') {
+        pulseControl(bot, 'jump', 120, 260);
+        return;
+    }
+
+    if (action === 'sneak') {
+        pulseControl(bot, 'sneak', 400, 1200);
+        return;
+    }
+
+    if (action === 'swing') {
+        bot.swingArm();
+        return;
+    }
+
+    if (action === 'step') {
+        const r = Math.max(1, config.utils.behavior['move-radius'] || 2);
+        const pos = bot.entity.position;
+        const tx = pos.x + (Math.random() * r * 2) - r;
+        const tz = pos.z + (Math.random() * r * 2) - r;
+        bot.pathfinder.setGoal(new goals.GoalXZ(tx, tz));
+        return;
+    }
+
+    const yawOffset = (Math.random() - 0.5) * 1.2;
+    const pitchOffset = (Math.random() - 0.5) * 0.35;
+    bot.look(bot.entity.yaw + yawOffset, bot.entity.pitch + pitchOffset, true);
+}
+
+function startAntiIdleHeartbeatLoop(bot) {
+    const cfg = config.utils.behavior['anti-idle-heartbeat'] || {};
+    if (!cfg.enabled) return null;
+
+    const minS = Math.max(3, cfg['interval-min'] || 8);
+    const maxS = Math.max(minS, cfg['interval-max'] || 14);
+
+    let stopped = false;
+    let timer = null;
+
+    const scheduleNext = () => {
+        if (stopped) return;
+        const delayMs = randomBetween(minS, maxS) * 1000;
+        timer = setTimeout(() => {
+            if (stopped) return;
+            doAntiIdlePulse(bot);
+            scheduleNext();
+        }, delayMs);
+    };
+
+    scheduleNext();
+
+    return {
+        stop() {
+            stopped = true;
+            if (timer) clearTimeout(timer);
+        }
+    };
 }
 
 function startHumanActivityLoop(bot) {
