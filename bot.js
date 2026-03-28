@@ -5,16 +5,164 @@ const config = require('./settings.json');
 const loggers = require('./logging.js');
 const logger = loggers.logger;
 
-// --- RENDER KEEP-ALIVE ---
+const botStatus = {
+    connected: false,
+    connectingSince: null,
+    lastConnectAt: null,
+    lastDisconnectAt: null,
+    lastDisconnectReason: null,
+    reconnectCount: 0,
+    kickedCount: 0,
+    errorCount: 0,
+    lastError: null,
+    chatMessagesSeen: 0,
+    chatMessagesSent: 0,
+    spawnCount: 0,
+    pingMs: null,
+    health: null,
+    food: null,
+    position: null,
+    uptimeMs: 0
+};
+
+let activeBot = null;
+
+function isoNow() {
+    return new Date().toISOString();
+}
+
+function updateLiveBotStats() {
+    if (!activeBot || !activeBot.player) return;
+
+    botStatus.pingMs = Number.isFinite(activeBot.player.ping) ? activeBot.player.ping : null;
+    botStatus.health = Number.isFinite(activeBot.health) ? activeBot.health : null;
+    botStatus.food = Number.isFinite(activeBot.food) ? activeBot.food : null;
+
+    if (activeBot.entity?.position) {
+        const { x, y, z } = activeBot.entity.position;
+        botStatus.position = {
+            x: Number(x.toFixed(2)),
+            y: Number(y.toFixed(2)),
+            z: Number(z.toFixed(2))
+        };
+    }
+
+    if (botStatus.connected && botStatus.lastConnectAt) {
+        botStatus.uptimeMs = Date.now() - Date.parse(botStatus.lastConnectAt);
+    }
+}
+
+function getStatusSnapshot() {
+    updateLiveBotStats();
+
+    return {
+        ...botStatus,
+        generatedAt: isoNow(),
+        server: {
+            host: config.server.ip,
+            port: config.server.port,
+            version: config.server.version
+        },
+        account: {
+            username: config['bot-account']['username'],
+            type: config['bot-account']['type']
+        }
+    };
+}
+
+// --- RENDER KEEP-ALIVE + STATUS DASHBOARD ---
 const http = require('http');
 const port = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
-    res.statusCode = 200;
-    res.end('Bot is running!');
+    if (req.url === '/api/status') {
+        const payload = getStatusSnapshot();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(payload));
+        return;
+    }
+
+    if (req.url === '/' || req.url === '/status') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Minecraft AFK Bot Status</title>
+  <style>
+    body { font-family: Inter, system-ui, Arial, sans-serif; background:#0f172a; color:#e2e8f0; margin:0; padding:24px; }
+    .card { max-width:760px; margin:0 auto; background:#111827; border:1px solid #334155; border-radius:12px; padding:20px; }
+    h1 { margin-top:0; font-size:1.4rem; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:12px; }
+    .item { background:#1f2937; border-radius:8px; padding:10px; }
+    .label { color:#94a3b8; font-size:.85rem; }
+    .value { font-size:1.05rem; margin-top:4px; font-weight:600; }
+    .ok { color:#22c55e; }
+    .warn { color:#f59e0b; }
+    .mono { font-family: ui-monospace, Menlo, monospace; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>AFK Bot Live Status</h1>
+    <div class="grid" id="stats"></div>
+  </div>
+<script>
+function fmtMs(ms){
+  if(!ms || ms < 0) return '0s';
+  const s = Math.floor(ms/1000);
+  const h = Math.floor(s/3600);
+  const m = Math.floor((s%3600)/60);
+  const sec = s%60;
+  return h ? (h + 'h ' + m + 'm ' + sec + 's') : (m + 'm ' + sec + 's');
+}
+function row(label, value, cls=''){
+  return '<div class="item"><div class="label">' + label + '</div><div class="value ' + cls + '">' + value + '</div></div>';
+}
+async function refresh(){
+  try{
+    const r = await fetch('/api/status', {cache:'no-store'});
+    const d = await r.json();
+    const pos = d.position ? (d.position.x + ', ' + d.position.y + ', ' + d.position.z) : 'N/A';
+    const connected = d.connected ? '<span class="ok">Connected</span>' : '<span class="warn">Disconnected</span>' ;
+    document.getElementById('stats').innerHTML = [
+      row('Connection', connected),
+      row('Ping', d.pingMs ?? 'N/A'),
+      row('Health', d.health ?? 'N/A'),
+      row('Food', d.food ?? 'N/A'),
+      row('Uptime', fmtMs(d.uptimeMs)),
+      row('Position', '<span class="mono">' + pos + '</span>'),
+      row('Reconnects', d.reconnectCount),
+      row('Spawns', d.spawnCount),
+      row('Chat Seen', d.chatMessagesSeen),
+      row('Chat Sent', d.chatMessagesSent),
+      row('Kicks', d.kickedCount),
+      row('Errors', d.errorCount),
+      row('Server', '<span class="mono">' + d.server.host + ':' + d.server.port + '</span>'),
+      row('Last Connect', d.lastConnectAt ?? 'Never'),
+      row('Last Disconnect', d.lastDisconnectAt ?? 'Never')
+    ].join('');
+  } catch (e) {
+    document.getElementById('stats').innerHTML = row('Status', 'Failed to load API', 'warn');
+  }
+}
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>`);
+        return;
+    }
+
+    res.statusCode = 404;
+    res.end('Not found');
 });
 server.listen(port, () => console.log(`Keep-alive server running on port ${port}`));
 
 function createBot() {
+    botStatus.connectingSince = isoNow();
+    botStatus.lastDisconnectReason = null;
+
     const bot = mineflayer.createBot({
         username: config['bot-account']['username'],
         password: process.env.BOT_PASSWORD || config['bot-account']['password'],
@@ -27,12 +175,20 @@ function createBot() {
     });
 
     bot.loadPlugin(pathfinder);
+    activeBot = bot;
 
     let sleepTaskRunning = false;
     let sleepInterval = null;
     let hungerInterval = null;
 
     bot.once('spawn', () => {
+        botStatus.connected = true;
+        botStatus.connectingSince = null;
+        botStatus.lastConnectAt = isoNow();
+        botStatus.spawnCount += 1;
+        botStatus.lastDisconnectReason = null;
+        updateLiveBotStats();
+
         logger.info("Bot joined the server.");
 
         // Safer movement profile (prevents breaking blocks/fences while pathing)
@@ -88,19 +244,36 @@ function createBot() {
     });
 
     bot.on('chat', (username, message) => {
+        if (username !== bot.username) botStatus.chatMessagesSeen += 1;
+
         if (config.utils['chat-log'] && username !== bot.username) {
             logger.info(`<${username}> ${message}`);
         }
     });
 
-    bot.on('kicked', (reason) => logger.warn(`Kicked: ${reason}`));
-    bot.on('error', (err) => logger.error(`Error: ${err.message}`));
+    bot.on('kicked', (reason) => {
+        botStatus.kickedCount += 1;
+        botStatus.lastDisconnectReason = `kicked: ${reason}`;
+        logger.warn(`Kicked: ${reason}`);
+    });
+
+    bot.on('error', (err) => {
+        botStatus.errorCount += 1;
+        botStatus.lastError = err.message;
+        logger.error(`Error: ${err.message}`);
+    });
     
     bot.on('end', () => {
+        botStatus.connected = false;
+        botStatus.lastDisconnectAt = isoNow();
+        botStatus.uptimeMs = 0;
+        if (!botStatus.lastDisconnectReason) botStatus.lastDisconnectReason = 'connection ended';
+        if (activeBot === bot) activeBot = null;
         if (sleepInterval) clearInterval(sleepInterval);
         if (hungerInterval) clearInterval(hungerInterval);
 
         if (config.utils['auto-reconnect']) {
+            botStatus.reconnectCount += 1;
             const baseDelay = config.utils['auto-reconnect-delay'];
             const jitter = config.utils['auto-reconnect-jitter'] || 0;
             const randomizedDelay = baseDelay + Math.floor(Math.random() * (jitter + 1));
@@ -326,7 +499,10 @@ function startChatLoop(bot) {
     const delay = (Math.floor(Math.random() * (max - min + 1)) + min) * 1000;
     setTimeout(() => {
         const msgs = config.utils['chat-messages'].messages;
-        bot.chat(msgs[Math.floor(Math.random() * msgs.length)]);
+        if (Array.isArray(msgs) && msgs.length > 0) {
+            bot.chat(msgs[Math.floor(Math.random() * msgs.length)]);
+            botStatus.chatMessagesSent += 1;
+        }
         startChatLoop(bot);
     }, delay);
 }
