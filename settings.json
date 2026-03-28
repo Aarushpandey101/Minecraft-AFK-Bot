@@ -19,6 +19,7 @@
   "utils": {
     "auto-auth": {
       "enabled": true,
+      "mode": "register-first",
       "password": "Afkbot101"
     },
     "behavior": {
