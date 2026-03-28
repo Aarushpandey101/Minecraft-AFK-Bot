@@ -91,6 +91,7 @@ function createAutoAuthController(bot) {
     if (!authConfig?.enabled) return null;
 
     const password = process.env.BOT_PASSWORD || authConfig.password;
+    const authMode = authConfig.mode || 'login';
     if (!password) {
         logger.warn('Auto-auth is enabled but no password is configured.');
         return null;
@@ -111,6 +112,9 @@ function createAutoAuthController(bot) {
         bot.chat(command);
         logger.info(`Sent auth command (${reason}): ${command.split(' ')[0]}`);
     };
+
+    const sendLogin = (reason) => sendCommand(`/login ${password}`, reason);
+    const sendRegister = (reason) => sendCommand(`/register ${password} ${password}`, reason);
 
     const scheduleCommand = (command, delayMs, reason) => {
         const timer = setTimeout(() => {
@@ -139,19 +143,36 @@ function createAutoAuthController(bot) {
         }
 
         if (AUTH_REGISTER_PROMPT_PATTERNS.some(pattern => normalized.includes(pattern))) {
-            sendCommand(`/register ${password} ${password}`, 'register prompt');
+            sendRegister('register prompt');
             scheduleCommand(`/login ${password}`, 1200, 'post-register login');
             return;
         }
 
         if (AUTH_LOGIN_PROMPT_PATTERNS.some(pattern => normalized.includes(pattern))) {
-            sendCommand(`/login ${password}`, 'login prompt');
+            sendLogin('login prompt');
         }
     };
 
-    scheduleCommand(`/login ${password}`, 250, 'initial login');
-    scheduleCommand(`/login ${password}`, 5000, 'login retry');
-    scheduleCommand(`/login ${password}`, 12000, 'final login retry');
+    if (authMode === 'register-first') {
+        scheduleCommand(`/register ${password} ${password}`, 250, 'initial register');
+        scheduleCommand(`/login ${password}`, 1800, 'post-register login');
+        scheduleCommand(`/login ${password}`, 6000, 'login retry');
+        scheduleCommand(`/login ${password}`, 12000, 'final login retry');
+    } else if (authMode === 'register-only') {
+        scheduleCommand(`/register ${password} ${password}`, 250, 'initial register');
+        scheduleCommand(`/register ${password} ${password}`, 5000, 'register retry');
+        scheduleCommand(`/register ${password} ${password}`, 12000, 'final register retry');
+    } else if (authMode === 'both') {
+        scheduleCommand(`/register ${password} ${password}`, 250, 'initial register');
+        scheduleCommand(`/login ${password}`, 1200, 'initial login');
+        scheduleCommand(`/register ${password} ${password}`, 5000, 'register retry');
+        scheduleCommand(`/login ${password}`, 7000, 'login retry');
+        scheduleCommand(`/login ${password}`, 12000, 'final login retry');
+    } else {
+        scheduleCommand(`/login ${password}`, 250, 'initial login');
+        scheduleCommand(`/login ${password}`, 5000, 'login retry');
+        scheduleCommand(`/login ${password}`, 12000, 'final login retry');
+    }
 
     return {
         handleMessage,
