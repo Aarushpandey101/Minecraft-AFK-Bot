@@ -7,7 +7,6 @@ const logger = loggers.logger;
 
 const botStatus = {
     connected: false,
-    state: 'disconnected',
     connectingSince: null,
     lastConnectAt: null,
     lastDisconnectAt: null,
@@ -16,8 +15,6 @@ const botStatus = {
     kickedCount: 0,
     errorCount: 0,
     lastError: null,
-    lastErrorCode: null,
-    nextReconnectAt: null,
     chatMessagesSeen: 0,
     chatMessagesSent: 0,
     spawnCount: 0,
@@ -53,24 +50,6 @@ function updateLiveBotStats() {
     if (botStatus.connected && botStatus.lastConnectAt) {
         botStatus.uptimeMs = Date.now() - Date.parse(botStatus.lastConnectAt);
     }
-}
-
-function isNetworkTimeoutError(errCode) {
-    const transient = ['ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND', 'ECONNRESET'];
-    return transient.includes(errCode || '');
-}
-
-function getReconnectDelayMs() {
-    const baseDelay = config.utils['auto-reconnect-delay'];
-    const jitter = config.utils['auto-reconnect-jitter'] || 0;
-
-    if (isNetworkTimeoutError(botStatus.lastErrorCode)) {
-        const fastBase = config.utils['network-reconnect-delay'] || 15000;
-        const fastJitter = config.utils['network-reconnect-jitter'] || 5000;
-        return fastBase + Math.floor(Math.random() * (fastJitter + 1));
-    }
-
-    return baseDelay + Math.floor(Math.random() * (jitter + 1));
 }
 
 function getStatusSnapshot() {
@@ -148,7 +127,6 @@ async function refresh(){
     const connected = d.connected ? '<span class="ok">Connected</span>' : '<span class="warn">Disconnected</span>' ;
     document.getElementById('stats').innerHTML = [
       row('Connection', connected),
-      row('State', d.state ?? 'unknown'),
       row('Ping', d.pingMs ?? 'N/A'),
       row('Health', d.health ?? 'N/A'),
       row('Food', d.food ?? 'N/A'),
@@ -160,12 +138,9 @@ async function refresh(){
       row('Chat Sent', d.chatMessagesSent),
       row('Kicks', d.kickedCount),
       row('Errors', d.errorCount),
-      row('Last Error', d.lastErrorCode ? (d.lastErrorCode + ': ' + (d.lastError ?? '')) : (d.lastError ?? 'None')),
-      row('Next Reconnect', d.nextReconnectAt ?? 'N/A'),
       row('Server', '<span class="mono">' + d.server.host + ':' + d.server.port + '</span>'),
       row('Last Connect', d.lastConnectAt ?? 'Never'),
-      row('Last Disconnect', d.lastDisconnectAt ?? 'Never'),
-      row('Connecting Since', d.connectingSince ?? 'N/A')
+      row('Last Disconnect', d.lastDisconnectAt ?? 'Never')
     ].join('');
   } catch (e) {
     document.getElementById('stats').innerHTML = row('Status', 'Failed to load API', 'warn');
@@ -185,11 +160,8 @@ setInterval(refresh, 3000);
 server.listen(port, () => console.log(`Keep-alive server running on port ${port}`));
 
 function createBot() {
-    botStatus.connected = false;
-    botStatus.state = 'connecting';
     botStatus.connectingSince = isoNow();
     botStatus.lastDisconnectReason = null;
-    botStatus.nextReconnectAt = null;
 
     const bot = mineflayer.createBot({
         username: config['bot-account']['username'],
@@ -214,19 +186,12 @@ function createBot() {
         botStatus.connected = true;
         botStatus.state = 'connected';
         botStatus.lastConnectAt = isoNow();
-        botStatus.lastError = null;
-        botStatus.lastErrorCode = null;
-        botStatus.nextReconnectAt = null;
     });
 
     bot.once('spawn', () => {
         botStatus.connected = true;
-        botStatus.state = 'connected';
         botStatus.connectingSince = null;
         botStatus.lastConnectAt = isoNow();
-        botStatus.lastError = null;
-        botStatus.lastErrorCode = null;
-        botStatus.nextReconnectAt = null;
         botStatus.spawnCount += 1;
         botStatus.lastDisconnectReason = null;
         updateLiveBotStats();
@@ -298,24 +263,18 @@ function createBot() {
 
     bot.on('kicked', (reason) => {
         botStatus.kickedCount += 1;
-        botStatus.connected = false;
-        botStatus.state = 'disconnected';
-        botStatus.lastDisconnectAt = isoNow();
         botStatus.lastDisconnectReason = `kicked: ${reason}`;
-
         logger.warn(`Kicked: ${reason}`);
     });
 
     bot.on('error', (err) => {
         botStatus.errorCount += 1;
         botStatus.lastError = err.message;
-        botStatus.lastErrorCode = err.code || null;
         logger.error(`Error: ${err.message}`);
     });
     
     bot.on('end', () => {
         botStatus.connected = false;
-        botStatus.state = 'disconnected';
         botStatus.lastDisconnectAt = isoNow();
         botStatus.uptimeMs = 0;
         if (!botStatus.lastDisconnectReason) botStatus.lastDisconnectReason = 'connection ended';
@@ -326,9 +285,9 @@ function createBot() {
 
         if (config.utils['auto-reconnect']) {
             botStatus.reconnectCount += 1;
-            const randomizedDelay = getReconnectDelayMs();
-            botStatus.state = 'reconnecting';
-            botStatus.nextReconnectAt = new Date(Date.now() + randomizedDelay).toISOString();
+            const baseDelay = config.utils['auto-reconnect-delay'];
+            const jitter = config.utils['auto-reconnect-jitter'] || 0;
+            const randomizedDelay = baseDelay + Math.floor(Math.random() * (jitter + 1));
             logger.info(`Reconnecting in ${Math.round(randomizedDelay / 1000)}s...`);
             setTimeout(createBot, randomizedDelay);
         }
