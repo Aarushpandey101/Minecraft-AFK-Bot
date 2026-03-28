@@ -30,6 +30,7 @@
 
 - Increase `server.check-timeout-interval` in `settings.json` if your host has lag spikes.
 - Add reconnect jitter with `utils.auto-reconnect-jitter` to avoid fixed reconnect patterns.
+- For network timeout errors (`ETIMEDOUT`, `ECONNREFUSED`), tune `utils.network-reconnect-delay` and `utils.network-reconnect-jitter` for faster retry cycles.
 - Use `utils.behavior.confinement` to keep the bot near a fixed center point so it does not wander out of fenced areas.
 - Keep `move-radius` small (1-2) when the bot is inside a tiny AFK box with a bed.
 - Tune `utils.behavior.humanizer.interval-min/max` for irregular micro-actions (look, sneak, jump) to reduce AFK kicks.
