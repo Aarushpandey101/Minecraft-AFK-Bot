@@ -30,9 +30,11 @@
 
 - Increase `server.check-timeout-interval` in `settings.json` if your host has lag spikes.
 - Add reconnect jitter with `utils.auto-reconnect-jitter` to avoid fixed reconnect patterns.
+- For network timeout errors (`ETIMEDOUT`, `ECONNREFUSED`), tune `utils.network-reconnect-delay` and `utils.network-reconnect-jitter` for faster retry cycles.
 - Use `utils.behavior.confinement` to keep the bot near a fixed center point so it does not wander out of fenced areas.
 - Keep `move-radius` small (1-2) when the bot is inside a tiny AFK box with a bed.
 - Tune `utils.behavior.humanizer.interval-min/max` for irregular micro-actions (look, sneak, jump) to reduce AFK kicks.
+- Use `utils.behavior.anti-idle-heartbeat` to schedule guaranteed movement/look/swing pulses every few seconds so the bot does not stay still for long periods.
 
 
 ## Sleep reliability tips
@@ -41,6 +43,18 @@
 - Set `utils.auto-sleep.approach-distance` to `2` (or `1`) so it walks close enough before sleeping.
 - `utils.auto-sleep.retry-interval-ms` controls how often the bot retries sleeping at night.
 - `utils.auto-sleep.no-bed-log-cooldown-ms` prevents log spam if no bed is found.
+
+
+## Web status page
+
+- Open `https://<your-host>/status` when deployed (or `http://localhost:3000/status` locally) to view a live dashboard.
+- JSON API is available at `/api/status` with connection state, ping, health/food, position, reconnect counters, and timestamps.
+
+## Important policy note
+
+- If a server (including Aternos-hosted servers) enforces AFK/idle bans, this bot should **not** be used to bypass those rules.
+- Make sure you have permission on your target server before running automation.
+
 
 ## Features
 
