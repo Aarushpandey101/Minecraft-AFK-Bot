@@ -49,12 +49,6 @@
 - Open `http://localhost:3000/status` (or your deployed `PORT`) to view a live dashboard.
 - JSON API is available at `/api/status` with connection state, ping, health/food, position, reconnect counters, and timestamps.
 
-## Important policy note
-
-- If a server (including Aternos-hosted servers) enforces AFK/idle bans, this bot should **not** be used to bypass those rules.
-- Make sure you have permission on your target server before running automation.
-
-
 ## Features
 
  - Anti-AFK Kick Module

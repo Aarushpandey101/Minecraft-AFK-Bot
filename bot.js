@@ -7,7 +7,6 @@ const logger = loggers.logger;
 
 const botStatus = {
     connected: false,
-    state: 'disconnected',
     connectingSince: null,
     lastConnectAt: null,
     lastDisconnectAt: null,
@@ -128,7 +127,6 @@ async function refresh(){
     const connected = d.connected ? '<span class="ok">Connected</span>' : '<span class="warn">Disconnected</span>' ;
     document.getElementById('stats').innerHTML = [
       row('Connection', connected),
-      row('State', d.state ?? 'unknown'),
       row('Ping', d.pingMs ?? 'N/A'),
       row('Health', d.health ?? 'N/A'),
       row('Food', d.food ?? 'N/A'),
@@ -142,8 +140,7 @@ async function refresh(){
       row('Errors', d.errorCount),
       row('Server', '<span class="mono">' + d.server.host + ':' + d.server.port + '</span>'),
       row('Last Connect', d.lastConnectAt ?? 'Never'),
-      row('Last Disconnect', d.lastDisconnectAt ?? 'Never'),
-      row('Connecting Since', d.connectingSince ?? 'N/A')
+      row('Last Disconnect', d.lastDisconnectAt ?? 'Never')
     ].join('');
   } catch (e) {
     document.getElementById('stats').innerHTML = row('Status', 'Failed to load API', 'warn');
@@ -163,8 +160,6 @@ setInterval(refresh, 3000);
 server.listen(port, () => console.log(`Keep-alive server running on port ${port}`));
 
 function createBot() {
-    botStatus.connected = false;
-    botStatus.state = 'connecting';
     botStatus.connectingSince = isoNow();
     botStatus.lastDisconnectReason = null;
 
@@ -195,7 +190,6 @@ function createBot() {
 
     bot.once('spawn', () => {
         botStatus.connected = true;
-        botStatus.state = 'connected';
         botStatus.connectingSince = null;
         botStatus.lastConnectAt = isoNow();
         botStatus.spawnCount += 1;
@@ -269,11 +263,7 @@ function createBot() {
 
     bot.on('kicked', (reason) => {
         botStatus.kickedCount += 1;
-        botStatus.connected = false;
-        botStatus.state = 'disconnected';
-        botStatus.lastDisconnectAt = isoNow();
         botStatus.lastDisconnectReason = `kicked: ${reason}`;
-
         logger.warn(`Kicked: ${reason}`);
     });
 
@@ -285,7 +275,6 @@ function createBot() {
     
     bot.on('end', () => {
         botStatus.connected = false;
-        botStatus.state = 'disconnected';
         botStatus.lastDisconnectAt = isoNow();
         botStatus.uptimeMs = 0;
         if (!botStatus.lastDisconnectReason) botStatus.lastDisconnectReason = 'connection ended';
