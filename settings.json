@@ -5,8 +5,8 @@
     "type": "offline"
   },
   "server": {
-    "ip": "SafeSpace12.aternos.me",
-    "port": 46743,
+    "ip": "Homeground-axHO.aternos.me",
+    "port": 12599,
     "version": "1.19.3",
     "check-timeout-interval": 60000
   },
@@ -26,7 +26,7 @@
       "mode": "stealth",
       "move-radius": 2,
       "confinement": {
-        "enabled": true,
+        "enabled": false,
         "x": -102,
         "y": 63,
         "z": 17,
