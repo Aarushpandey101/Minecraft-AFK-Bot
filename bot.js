@@ -99,6 +99,7 @@ function createAutoAuthController(bot) {
     let stopped = false;
     let authenticated = false;
     const timers = new Set();
+    const authenticatedCallbacks = new Set();
 
     const clearTimers = () => {
         for (const timer of timers) clearTimeout(timer);
@@ -120,8 +121,11 @@ function createAutoAuthController(bot) {
     };
 
     const markAuthenticated = () => {
+        if (authenticated) return;
         authenticated = true;
         clearTimers();
+        for (const callback of authenticatedCallbacks) callback();
+        authenticatedCallbacks.clear();
     };
 
     const handleMessage = (rawMessage) => {
@@ -145,15 +149,23 @@ function createAutoAuthController(bot) {
         }
     };
 
-    scheduleCommand(`/login ${password}`, 1000, 'initial login');
+    scheduleCommand(`/login ${password}`, 250, 'initial login');
     scheduleCommand(`/login ${password}`, 5000, 'login retry');
     scheduleCommand(`/login ${password}`, 12000, 'final login retry');
 
     return {
         handleMessage,
+        onAuthenticated(callback) {
+            if (authenticated) {
+                callback();
+                return;
+            }
+            authenticatedCallbacks.add(callback);
+        },
         stop() {
             stopped = true;
             clearTimers();
+            authenticatedCallbacks.clear();
         },
         markAuthenticated
     };
@@ -312,6 +324,7 @@ function createBot() {
     let antiIdleController = null;
     let autoAuthController = null;
     let lastErrorCode = null;
+    let runtimeStarted = false;
 
     bot.on('login', () => {
         botStatus.connected = true;
@@ -337,30 +350,32 @@ function createBot() {
         movement.canOpenDoors = false;
         bot.pathfinder.setMovements(movement);
 
+        const startRuntime = () => {
+            if (runtimeStarted) return;
+            runtimeStarted = true;
+
+            logger.info("Starting Survival Brain...");
+            startBrainLoop(bot);
+
+            const sleepRetryMs = config.utils['auto-sleep']['retry-interval-ms'] || 2500;
+            sleepInterval = setInterval(() => {
+                attemptAutoSleep(bot, () => sleepTaskRunning = true, () => sleepTaskRunning = false, () => sleepTaskRunning);
+            }, sleepRetryMs);
+
+            if (config.utils.behavior.enabled) startHumanActivityLoop(bot);
+            if (config.utils.behavior.enabled) antiIdleController = startAntiIdleHeartbeatLoop(bot);
+            if (config.utils['chat-messages'].enabled) startChatLoop(bot);
+            hungerInterval = setInterval(() => checkHunger(bot), 10000);
+        };
+
         // --- AUTH ---
         autoAuthController = createAutoAuthController(bot);
-
-        // --- START BRAIN ---
-        logger.info("Starting Survival Brain...");
-        startBrainLoop(bot);
-
-        // --- NIGHT SLEEP ENFORCER (runs frequently so we don't miss sleep windows) ---
-        const sleepRetryMs = config.utils['auto-sleep']['retry-interval-ms'] || 2500;
-        sleepInterval = setInterval(() => {
-            attemptAutoSleep(bot, () => sleepTaskRunning = true, () => sleepTaskRunning = false, () => sleepTaskRunning);
-        }, sleepRetryMs);
-
-        // --- HUMAN ACTIVITY LOOP ---
-        if (config.utils.behavior.enabled) startHumanActivityLoop(bot);
-
-        // --- HEARTBEAT ACTIVITY LOOP ---
-        if (config.utils.behavior.enabled) antiIdleController = startAntiIdleHeartbeatLoop(bot);
-
-        // --- CHAT ---
-        if (config.utils['chat-messages'].enabled) startChatLoop(bot);
-        
-        // --- AUTO EAT (Check every 10 seconds) ---
-        hungerInterval = setInterval(() => checkHunger(bot), 10000);
+        if (autoAuthController) {
+            autoAuthController.onAuthenticated(startRuntime);
+            setTimeout(startRuntime, 15000);
+        } else {
+            startRuntime();
+        }
     });
 
     bot.on('time', () => {
