@@ -27,6 +27,24 @@ const botStatus = {
 };
 
 let activeBot = null;
+const AUTH_SUCCESS_PATTERNS = [
+    'successfully logged in',
+    'you are now logged in',
+    'logged in successfully',
+    'login successful'
+];
+const AUTH_LOGIN_PROMPT_PATTERNS = [
+    '/login',
+    'please login',
+    'please log in',
+    'log in with',
+    'authenticate with'
+];
+const AUTH_REGISTER_PROMPT_PATTERNS = [
+    '/register',
+    'please register',
+    'register with'
+];
 
 function isoNow() {
     return new Date().toISOString();
@@ -59,6 +77,85 @@ function getReconnectDelay(lastErrorCode) {
     return {
         isNetworkError,
         delayMs: baseDelay + Math.floor(Math.random() * (jitter + 1))
+    };
+}
+
+function stringifyMessage(message) {
+    if (typeof message === 'string') return message;
+    if (message?.toString) return message.toString();
+    return '';
+}
+
+function createAutoAuthController(bot) {
+    const authConfig = config.utils['auto-auth'];
+    if (!authConfig?.enabled) return null;
+
+    const password = process.env.BOT_PASSWORD || authConfig.password;
+    if (!password) {
+        logger.warn('Auto-auth is enabled but no password is configured.');
+        return null;
+    }
+
+    let stopped = false;
+    let authenticated = false;
+    const timers = new Set();
+
+    const clearTimers = () => {
+        for (const timer of timers) clearTimeout(timer);
+        timers.clear();
+    };
+
+    const sendCommand = (command, reason) => {
+        if (stopped || authenticated || !bot?.chat || !bot.player) return;
+        bot.chat(command);
+        logger.info(`Sent auth command (${reason}): ${command.split(' ')[0]}`);
+    };
+
+    const scheduleCommand = (command, delayMs, reason) => {
+        const timer = setTimeout(() => {
+            timers.delete(timer);
+            sendCommand(command, reason);
+        }, delayMs);
+        timers.add(timer);
+    };
+
+    const markAuthenticated = () => {
+        authenticated = true;
+        clearTimers();
+    };
+
+    const handleMessage = (rawMessage) => {
+        const normalized = stringifyMessage(rawMessage).toLowerCase();
+        if (!normalized) return;
+
+        if (AUTH_SUCCESS_PATTERNS.some(pattern => normalized.includes(pattern))) {
+            markAuthenticated();
+            logger.info('Auth plugin confirmed the bot is logged in.');
+            return;
+        }
+
+        if (AUTH_REGISTER_PROMPT_PATTERNS.some(pattern => normalized.includes(pattern))) {
+            sendCommand(`/register ${password} ${password}`, 'register prompt');
+            scheduleCommand(`/login ${password}`, 1200, 'post-register login');
+            return;
+        }
+
+        if (AUTH_LOGIN_PROMPT_PATTERNS.some(pattern => normalized.includes(pattern))) {
+            sendCommand(`/login ${password}`, 'login prompt');
+        }
+    };
+
+    scheduleCommand(`/login ${password}`, 1000, 'initial login');
+    scheduleCommand(`/login ${password}`, 5000, 'login retry');
+    scheduleCommand(`/login ${password}`, 12000, 'final login retry');
+
+    return {
+        handleMessage,
+        stop() {
+            stopped = true;
+            clearTimers();
+        },
+        markAuthenticated
     };
 }
 
@@ -213,6 +310,7 @@ function createBot() {
     let sleepInterval = null;
     let hungerInterval = null;
     let antiIdleController = null;
+    let autoAuthController = null;
     let lastErrorCode = null;
 
     bot.on('login', () => {
@@ -240,13 +338,7 @@ function createBot() {
         bot.pathfinder.setMovements(movement);
 
         // --- AUTH ---
-        if (config.utils['auto-auth'].enabled) {
-            let password = process.env.BOT_PASSWORD || config.utils['auto-auth'].password;
-            setTimeout(() => {
-                bot.chat(`/login ${password}`);
-                logger.info(`Logged in.`);
-            }, 3000);
-        }
+        autoAuthController = createAutoAuthController(bot);
 
         // --- START BRAIN ---
         logger.info("Starting Survival Brain...");
@@ -294,9 +386,18 @@ function createBot() {
         }
     });
 
+    bot.on('messagestr', (message) => {
+        autoAuthController?.handleMessage(message);
+    });
+
+    bot.on('message', (message) => {
+        autoAuthController?.handleMessage(message);
+    });
+
     bot.on('kicked', (reason) => {
         botStatus.kickedCount += 1;
         botStatus.lastDisconnectReason = `kicked: ${reason}`;
+        autoAuthController?.stop();
         logger.warn(`Kicked: ${reason}`);
     });
 
@@ -319,6 +420,7 @@ function createBot() {
         if (sleepInterval) clearInterval(sleepInterval);
         if (hungerInterval) clearInterval(hungerInterval);
         if (antiIdleController) antiIdleController.stop();
+        if (autoAuthController) autoAuthController.stop();
 
         if (config.utils['auto-reconnect']) {
             botStatus.reconnectCount += 1;
