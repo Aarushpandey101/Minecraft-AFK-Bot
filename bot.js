@@ -1,6 +1,7 @@
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 const { Vec3 } = require('vec3');
+const dns = require('dns').promises;
 const config = require('./settings.json');
 const loggers = require('./logging.js');
 const logger = loggers.logger;
@@ -29,6 +30,36 @@ let activeBot = null;
 
 function isoNow() {
     return new Date().toISOString();
+}
+
+async function logResolvedServerAddress() {
+    try {
+        const addresses = await dns.lookup(config.server.ip, { all: true });
+        if (Array.isArray(addresses) && addresses.length > 0) {
+            logger.info(`Resolved ${config.server.ip} to ${addresses.map(entry => entry.address).join(', ')}`);
+        }
+    } catch (err) {
+        logger.warn(`DNS lookup failed for ${config.server.ip}: ${err.message}`);
+    }
+}
+
+function isNetworkErrorCode(code) {
+    return ['ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND'].includes(code);
+}
+
+function getReconnectDelay(lastErrorCode) {
+    const isNetworkError = isNetworkErrorCode(lastErrorCode);
+    const baseDelay = isNetworkError
+        ? (config.utils['network-reconnect-delay'] || config.utils['auto-reconnect-delay'])
+        : config.utils['auto-reconnect-delay'];
+    const jitter = isNetworkError
+        ? (config.utils['network-reconnect-jitter'] || 0)
+        : (config.utils['auto-reconnect-jitter'] || 0);
+
+    return {
+        isNetworkError,
+        delayMs: baseDelay + Math.floor(Math.random() * (jitter + 1))
+    };
 }
 
 function updateLiveBotStats() {
@@ -162,6 +193,7 @@ server.listen(port, () => console.log(`Keep-alive server running on port ${port}
 function createBot() {
     botStatus.connectingSince = isoNow();
     botStatus.lastDisconnectReason = null;
+    logResolvedServerAddress();
 
     const bot = mineflayer.createBot({
         username: config['bot-account']['username'],
@@ -181,6 +213,7 @@ function createBot() {
     let sleepInterval = null;
     let hungerInterval = null;
     let antiIdleController = null;
+    let lastErrorCode = null;
 
     bot.on('login', () => {
         botStatus.connected = true;
@@ -270,6 +303,10 @@ function createBot() {
     bot.on('error', (err) => {
         botStatus.errorCount += 1;
         botStatus.lastError = err.message;
+        lastErrorCode = err.code || null;
+        if (isNetworkErrorCode(lastErrorCode)) {
+            botStatus.lastDisconnectReason = `network error: ${lastErrorCode}`;
+        }
         logger.error(`Error: ${err.message}`);
     });
     
@@ -285,11 +322,10 @@ function createBot() {
 
         if (config.utils['auto-reconnect']) {
             botStatus.reconnectCount += 1;
-            const baseDelay = config.utils['auto-reconnect-delay'];
-            const jitter = config.utils['auto-reconnect-jitter'] || 0;
-            const randomizedDelay = baseDelay + Math.floor(Math.random() * (jitter + 1));
-            logger.info(`Reconnecting in ${Math.round(randomizedDelay / 1000)}s...`);
-            setTimeout(createBot, randomizedDelay);
+            const reconnect = getReconnectDelay(lastErrorCode);
+            const reasonLabel = reconnect.isNetworkError ? ` after ${lastErrorCode}` : '';
+            logger.info(`Reconnecting in ${Math.round(reconnect.delayMs / 1000)}s${reasonLabel}...`);
+            setTimeout(createBot, reconnect.delayMs);
         }
     });
 }
