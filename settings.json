@@ -6,7 +6,7 @@
   },
   "server": {
     "ip": "Homeground-axHO.aternos.me",
-    "port": 12599,
+    "port": 42888,
     "version": "1.19.3",
     "check-timeout-interval": 60000
   },
