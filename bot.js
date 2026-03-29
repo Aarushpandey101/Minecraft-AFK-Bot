@@ -120,7 +120,7 @@ function createAutoAuthController(bot) {
     };
 
     const sendCommand = (command, reason) => {
-        if (stopped || authenticated || !bot?.chat || !bot.player) return;
+        if (stopped || authenticated || !bot?.chat) return;
         bot.chat(command);
         logger.info(`Sent auth command (${reason}): ${command.split(' ')[0]}`);
     };
