@@ -205,9 +205,10 @@ function createAutoAuthController(bot) {
 }
 
 function updateLiveBotStats() {
-    if (!activeBot || !activeBot.player) return;
+    if (!activeBot) return;
 
-    botStatus.pingMs = Number.isFinite(activeBot.player.ping) ? activeBot.player.ping : null;
+    const playerPing = activeBot.player?.ping;
+    botStatus.pingMs = Number.isFinite(playerPing) ? playerPing : null;
     botStatus.health = Number.isFinite(activeBot.health) ? activeBot.health : null;
     botStatus.food = Number.isFinite(activeBot.food) ? activeBot.food : null;
 
@@ -218,6 +219,8 @@ function updateLiveBotStats() {
             y: Number(y.toFixed(2)),
             z: Number(z.toFixed(2))
         };
+    } else {
+        botStatus.position = null;
     }
 
     if (botStatus.connected && botStatus.lastConnectAt) {
