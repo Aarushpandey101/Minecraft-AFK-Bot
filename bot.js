@@ -225,6 +225,19 @@ function updateLiveBotStats() {
     }
 }
 
+function ensurePathfinderReady(bot) {
+    if (!bot?.pathfinder) {
+        bot.loadPlugin(pathfinder);
+    }
+
+    const movement = new Movements(bot);
+    movement.canDig = false;
+    movement.allowParkour = false;
+    movement.allowSprinting = false;
+    movement.canOpenDoors = false;
+    bot.pathfinder.setMovements(movement);
+}
+
 function getStatusSnapshot() {
     updateLiveBotStats();
 
@@ -347,8 +360,6 @@ function createBot() {
         keepAlive: true,
         checkTimeoutInterval: config.server['check-timeout-interval'] || 60000,
     });
-
-    bot.loadPlugin(pathfinder);
     activeBot = bot;
 
     let sleepTaskRunning = false;
@@ -358,6 +369,7 @@ function createBot() {
     let autoAuthController = null;
     let lastErrorCode = null;
     let runtimeStarted = false;
+    let runtimeStartTimeout = null;
 
     bot.on('login', () => {
         botStatus.connected = true;
@@ -374,18 +386,14 @@ function createBot() {
         updateLiveBotStats();
 
         logger.info("Bot joined the server.");
-
-        // Safer movement profile (prevents breaking blocks/fences while pathing)
-        const movement = new Movements(bot);
-        movement.canDig = false;
-        movement.allowParkour = false;
-        movement.allowSprinting = false;
-        movement.canOpenDoors = false;
-        bot.pathfinder.setMovements(movement);
-
         const startRuntime = () => {
             if (runtimeStarted) return;
             runtimeStarted = true;
+            runtimeStartTimeout = null;
+
+            if (config.position.enabled || config.utils['auto-sleep']?.enabled || config.utils.combat.enabled || config.utils.behavior.enabled) {
+                ensurePathfinderReady(bot);
+            }
 
             logger.info("Starting Survival Brain...");
             startBrainLoop(bot);
@@ -405,7 +413,7 @@ function createBot() {
         autoAuthController = createAutoAuthController(bot);
         if (autoAuthController) {
             autoAuthController.onAuthenticated(startRuntime);
-            setTimeout(startRuntime, 15000);
+            runtimeStartTimeout = setTimeout(startRuntime, 15000);
         } else {
             startRuntime();
         }
@@ -446,6 +454,10 @@ function createBot() {
         botStatus.kickedCount += 1;
         botStatus.lastDisconnectReason = `kicked: ${reason}`;
         autoAuthController?.stop();
+        if (runtimeStartTimeout) {
+            clearTimeout(runtimeStartTimeout);
+            runtimeStartTimeout = null;
+        }
         logger.warn(`Kicked: ${reason}`);
     });
 
@@ -471,6 +483,7 @@ function createBot() {
         if (hungerInterval) clearInterval(hungerInterval);
         if (antiIdleController) antiIdleController.stop();
         if (autoAuthController) autoAuthController.stop();
+        if (runtimeStartTimeout) clearTimeout(runtimeStartTimeout);
 
         if (config.utils['auto-reconnect']) {
             botStatus.reconnectCount += 1;
