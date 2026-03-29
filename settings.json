@@ -23,7 +23,7 @@
       "password": "Afkbot101"
     },
     "behavior": {
-      "enabled": false,
+      "enabled": true,
       "mode": "stealth",
       "move-radius": 1,
       "confinement": {
@@ -34,24 +34,21 @@
         "radius": 3
       },
       "humanizer": {
-        "interval-min": 10,
-        "interval-max": 20
+        "interval-min": 25,
+        "interval-max": 45
       },
       "anti-idle-heartbeat": {
         "enabled": true,
-        "interval-min": 8,
-        "interval-max": 14,
+        "interval-min": 20,
+        "interval-max": 35,
         "actions": [
           "look",
-          "jump",
-          "sneak",
-          "swing",
-          "step"
+          "sneak"
         ]
       }
     },
     "auto-sleep": {
-      "enabled": true,
+      "enabled": false,
       "bed-search-radius": 30,
       "approach-distance": 2,
       "retry-interval-ms": 2500,
