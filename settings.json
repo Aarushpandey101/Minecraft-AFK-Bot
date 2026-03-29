@@ -8,7 +8,7 @@
     "ip": "Homeground-axHO.aternos.me",
     "port": 12599,
     "version": "1.19.3",
-    "check-timeout-interval": 180000
+    "check-timeout-interval": 240000
   },
   "position": {
     "enabled": false,
@@ -92,7 +92,9 @@
     "auto-reconnect": true,
     "auto-reconnect-delay": 60000,
     "auto-reconnect-jitter": 15000,
-    "network-reconnect-delay": 15000,
-    "network-reconnect-jitter": 5000
+    "network-reconnect-delay": 5000,
+    "network-reconnect-jitter": 3000,
+    "timeout-reconnect-delay": 8000,
+    "timeout-reconnect-jitter": 4000
   }
 }

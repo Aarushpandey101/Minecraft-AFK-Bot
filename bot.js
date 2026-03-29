@@ -65,17 +65,29 @@ function isNetworkErrorCode(code) {
     return ['ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND'].includes(code);
 }
 
-function getReconnectDelay(lastErrorCode) {
+function isSessionTimeoutReason(reason) {
+    if (!reason) return false;
+    const normalized = String(reason).toLowerCase();
+    return normalized.includes('disconnect.timeout') || normalized.includes('client timed out');
+}
+
+function getReconnectDelay(lastErrorCode, lastDisconnectReason) {
     const isNetworkError = isNetworkErrorCode(lastErrorCode);
-    const baseDelay = isNetworkError
-        ? (config.utils['network-reconnect-delay'] || config.utils['auto-reconnect-delay'])
-        : config.utils['auto-reconnect-delay'];
-    const jitter = isNetworkError
-        ? (config.utils['network-reconnect-jitter'] || 0)
-        : (config.utils['auto-reconnect-jitter'] || 0);
+    const isSessionTimeout = isSessionTimeoutReason(lastDisconnectReason);
+    let baseDelay = config.utils['auto-reconnect-delay'];
+    let jitter = config.utils['auto-reconnect-jitter'] || 0;
+
+    if (isNetworkError) {
+        baseDelay = config.utils['network-reconnect-delay'] || baseDelay;
+        jitter = config.utils['network-reconnect-jitter'] || 0;
+    } else if (isSessionTimeout) {
+        baseDelay = config.utils['timeout-reconnect-delay'] || baseDelay;
+        jitter = config.utils['timeout-reconnect-jitter'] || 0;
+    }
 
     return {
         isNetworkError,
+        isSessionTimeout,
         delayMs: baseDelay + Math.floor(Math.random() * (jitter + 1))
     };
 }
@@ -443,6 +455,8 @@ function createBot() {
         lastErrorCode = err.code || null;
         if (isNetworkErrorCode(lastErrorCode)) {
             botStatus.lastDisconnectReason = `network error: ${lastErrorCode}`;
+        } else if (isSessionTimeoutReason(err.message)) {
+            botStatus.lastDisconnectReason = `timeout error: ${err.message}`;
         }
         logger.error(`Error: ${err.message}`);
     });
@@ -460,8 +474,13 @@ function createBot() {
 
         if (config.utils['auto-reconnect']) {
             botStatus.reconnectCount += 1;
-            const reconnect = getReconnectDelay(lastErrorCode);
-            const reasonLabel = reconnect.isNetworkError ? ` after ${lastErrorCode}` : '';
+            const reconnect = getReconnectDelay(lastErrorCode, botStatus.lastDisconnectReason);
+            let reasonLabel = '';
+            if (reconnect.isNetworkError) {
+                reasonLabel = ` after ${lastErrorCode}`;
+            } else if (reconnect.isSessionTimeout) {
+                reasonLabel = ' after session timeout';
+            }
             logger.info(`Reconnecting in ${Math.round(reconnect.delayMs / 1000)}s${reasonLabel}...`);
             setTimeout(createBot, reconnect.delayMs);
         }
